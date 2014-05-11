@@ -1,0 +1,22 @@
+import testing ;
+import os ;
+import flex ;
+
+use-project /boost : [ os.environ BOOST_ROOT ] ;
+
+lib ssl ;
+lib crypto ;
+
+exe gcm_stub_server
+    :
+    gcm_stub_server.cpp
+    http_header_lexer.l
+    http_header.cpp
+    :
+    <include>.
+    <library>/boost/system//boost_system
+    <library>ssl
+    <library>crypto
+    <cxxflags>-Wfatal-errors
+    <threading>multi
+    ;

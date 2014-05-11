@@ -1,0 +1,11 @@
+import type ;
+import generators ;
+
+type.register L : l ;
+
+generators.register-standard flex.flex : L : C ;
+
+actions flex
+{
+    flex -o $(<) $(>)
+}
