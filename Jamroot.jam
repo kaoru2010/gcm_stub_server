@@ -19,4 +19,6 @@ exe gcm_stub_server
     <library>crypto
     <cxxflags>-Wfatal-errors
     <threading>multi
+    <toolset>gcc:<cxxflags>-std=gnu++0x
+    <toolset>clang:<cxxflags>-std=c++11
     ;

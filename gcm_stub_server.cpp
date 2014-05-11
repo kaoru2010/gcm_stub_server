@@ -31,6 +31,27 @@ using namespace std;
 
 typedef boost::asio::ssl::stream<boost::asio::ip::tcp::socket> ssl_socket;
 
+class buffer_size_at_least
+{
+public:
+    explicit buffer_size_at_least(ptrdiff_t length) : length_(length) {}
+
+    template <typename Iterator>
+    std::pair<Iterator, bool> operator()(Iterator begin, Iterator end) const
+    {
+        return std::make_pair(begin + length_, distance(begin, end) >= length_);
+    }
+
+private:
+    ptrdiff_t length_;
+};
+
+namespace boost {
+    namespace asio {
+        template <> struct is_match_condition<buffer_size_at_least> : public boost::true_type {};
+    } // namespace asio
+} // namespace boost
+
 class gcm_fake_server;
 class gcm_session;
 
@@ -87,6 +108,35 @@ public:
     ,   http_header_()
     {}
 
+    template<typename Handler>
+    void async_read_header(Handler handler)
+    {
+        auto internal_handler = [handler, this](const boost::system::error_code& ec, std::size_t bytes_transferred) mutable
+        {
+            if (!ec) {
+                parse_status_line(&http_header_, boost::asio::buffer_cast<const char *>(buf_.data()), bytes_transferred);
+                buf_.consume(bytes_transferred + 4);
+            }
+            handler(ec, bytes_transferred);
+        };
+
+        async_read_until(socket_, buf_, "\r\n\r\n", internal_handler);
+    }
+
+    template<typename Handler>
+    void async_read_body(Handler handler)
+    {
+        auto internal_handler = [handler, this](const boost::system::error_code& ec, std::size_t bytes_transferred) mutable
+        {
+            if (!ec) {
+                buf_.consume(http_header_.content_length);
+            }
+            handler(ec, bytes_transferred);
+        };
+
+        async_read_until(socket_, buf_, buffer_size_at_least(http_header_.content_length), internal_handler);
+    }
+
 private:
     boost::asio::io_service& io_service_;
     boost::asio::ssl::context& context_;
@@ -126,11 +176,10 @@ void response_handler::operator()(const boost::system::error_code& ec, std::size
 
         {
             // Read status line and headers
-            yield async_read_until(session_->socket_, session_->buf_, "\r\n\r\n", *this);
-            parse_status_line(&session_->http_header_, asio::buffer_cast<const char *>(session_->buf_.data()), bytes_transferred);
+            yield session_->async_read_header(*this);
 
             // Read POST bosy
-            yield asio::async_read(session_->socket_, session_->buf_, asio::transfer_at_least(session_->http_header_.content_length), *this);
+            yield session_->async_read_body(*this);
 
             // Write response
             yield asio::async_write(session_->socket_, asio::buffer("HTTP/1.0 200 OK\r\nContent-Length: 3\r\n\r\nOK\n"), *this);
